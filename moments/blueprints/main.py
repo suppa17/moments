@@ -9,6 +9,8 @@ from moments.forms.main import CommentForm, DescriptionForm, TagForm
 from moments.models import Collection, Comment, Follow, Notification, Photo, Tag, User
 from moments.notifications import push_collect_notification, push_comment_notification
 from moments.utils import flash_errors, redirect_back, rename_image, resize_image, validate_image
+from moments.services.azure_vision import generate_alt_text
+
 
 main_bp = Blueprint('main', __name__)
 
@@ -138,6 +140,34 @@ def upload():
         )
         db.session.add(photo)
         db.session.commit()
+
+        #Me
+        try:
+            alt_text = generate_alt_text(str(current_app.config['MOMENTS_UPLOAD_PATH'] / filename))
+            photo.description = alt_text
+            db.session.commit()
+        except Exception as e:
+            # Log or handle error but do not break the app flow
+            current_app.logger.warning(f"Azure alt-text generation failed: {e}")
+        
+         # 5. Generate tags from Azure (object detection)
+        try:
+            recognized_tags = generate_image_tags(str(current_app.config['MOMENTS_UPLOAD_PATH'] / filename))
+            for tag_name in recognized_tags:
+                # see if tag exists in DB
+                existing_tag = db.session.scalar(select(Tag).filter_by(name=tag_name))
+                if existing_tag is None:
+                    existing_tag = Tag(name=tag_name)
+                    db.session.add(existing_tag)
+                    db.session.commit()
+                # associate tag with this photo
+                if existing_tag not in photo.tags:
+                    photo.tags.append(existing_tag)
+            db.session.commit()
+        except Exception as e:
+            current_app.logger.warning(f"Azure tag generation failed: {e}")
+        
+        flash('Photo uploaded successfully!', 'success')
     return render_template('main/upload.html')
 
 

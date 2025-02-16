@@ -170,3 +170,5 @@ uploads/avatars/*
 logs/*
 !logs/.gitkeep
 whooshee
+.env
+myenv
